@@ -1,33 +1,23 @@
-```verilog
 `timescale 1ns/1ps
 
 module ahb_memory #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32,
-    parameter DEPTH = 256
+    parameter MEM_SIZE   = 65536
 )(
-    input wire                  HCLK,
-    input wire                  HRESETn,
+    input  wire                     HCLK,
+    input  wire                     HRESETn,
 
-    input wire [ADDR_WIDTH-1:0] HADDR,
-    input wire [1:0]            HTRANS,
-    input wire                  HWRITE,
-    input wire [2:0]            HSIZE,
-    input wire [DATA_WIDTH-1:0] HWDATA,
+    input  wire                     mem_valid,
+    input  wire                     mem_write,
+    input  wire [ADDR_WIDTH-1:0]    mem_addr,
+    input  wire [2:0]               mem_size,
+    input  wire [DATA_WIDTH-1:0]    mem_wdata,
 
-    output reg [DATA_WIDTH-1:0] HRDATA,
-    output reg                  HREADY,
-    output reg [1:0]            HRESP
+    output reg  [DATA_WIDTH-1:0]    mem_rdata
 );
 
-    localparam IDLE    = 2'b00;
-    localparam NONSEQ  = 2'b10;
-    localparam SEQ     = 2'b11;
-
-    localparam OKAY  = 2'b00;
-    localparam ERROR = 2'b01;
-
-    reg [DATA_WIDTH-1:0] memory [0:DEPTH-1];
+    reg [7:0] memory [0:MEM_SIZE-1];
 
     integer i;
 
@@ -35,40 +25,75 @@ module ahb_memory #(
 
         if (!HRESETn) begin
 
-            HRDATA <= 0;
-            HREADY <= 1'b1;
-            HRESP  <= OKAY;
+            mem_rdata <= 32'b0;
 
-            for (i = 0; i < DEPTH; i = i + 1)
-                memory[i] <= 0;
+            for (i = 0; i < MEM_SIZE; i = i + 1)
+                memory[i] <= 8'b0;
 
         end
 
-        else begin
+        else if (mem_valid) begin
 
-            HREADY <= 1'b1;
-            HRESP  <= OKAY;
+            if (mem_write) begin
 
-            if ((HTRANS == NONSEQ) || (HTRANS == SEQ)) begin
+                case (mem_size)
 
-                if (HADDR[ADDR_WIDTH-1:2] < DEPTH) begin
+                    // BYTE
+                    3'b000:
+                        memory[mem_addr] <= mem_wdata[7:0];
 
-                    if (HWRITE) begin
-                        memory[HADDR[ADDR_WIDTH-1:2]] <= HWDATA;
+                    // HALFWORD
+                    3'b001: begin
+                        memory[mem_addr]     <= mem_wdata[7:0];
+                        memory[mem_addr + 1] <= mem_wdata[15:8];
                     end
 
-                    else begin
-                        HRDATA <= memory[HADDR[ADDR_WIDTH-1:2]];
+                    // WORD
+                    3'b010: begin
+                        memory[mem_addr]     <= mem_wdata[7:0];
+                        memory[mem_addr + 1] <= mem_wdata[15:8];
+                        memory[mem_addr + 2] <= mem_wdata[23:16];
+                        memory[mem_addr + 3] <= mem_wdata[31:24];
                     end
 
-                end
+                    default: begin
+                        memory[mem_addr]     <= mem_wdata[7:0];
+                        memory[mem_addr + 1] <= mem_wdata[15:8];
+                        memory[mem_addr + 2] <= mem_wdata[23:16];
+                        memory[mem_addr + 3] <= mem_wdata[31:24];
+                    end
 
-                else begin
-                    HRESP <= ERROR;
-                end
+                endcase
+
             end
+
+            else begin
+
+                case (mem_size)
+
+                    3'b000:
+                        mem_rdata <= {24'b0,
+                                      memory[mem_addr]};
+
+                    3'b001:
+                        mem_rdata <= {16'b0,
+                                      memory[mem_addr + 1],
+                                      memory[mem_addr]};
+
+                    default:
+                        mem_rdata <= {
+                            memory[mem_addr + 3],
+                            memory[mem_addr + 2],
+                            memory[mem_addr + 1],
+                            memory[mem_addr]
+                        };
+
+                endcase
+
+            end
+
         end
+
     end
 
 endmodule
-```
